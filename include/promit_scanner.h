@@ -15,16 +15,8 @@
 #ifndef __PROMIT_SCANNER_H__
 #define __PROMIT_SCANNER_H__
 
-// The SalamanderVM runtime.
-
-#include <salamander/salamander.h>
-
-#endif
-
-#ifndef __PROMIT_PARSER_H__
-#define __PROMIT_PARSER_H__
-
 #include <promit/promit.h>
+#include <promit_core.h>
 
 // Types of token we are going to generate from the source file.
 
@@ -208,7 +200,7 @@ typedef struct struct_Token {
 
     // Parsed value if the token is a literal.
 
-    Value value;
+    void* value;
 } Token;
 
 typedef struct struct_Scanner {
