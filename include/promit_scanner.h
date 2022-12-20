@@ -53,8 +53,6 @@ typedef enum enum_TokenType {
     TOKEN_PERIOD,
     TOKEN_EQUAL,
     TOKEN_QUESTION,
-    TOKEN_APOSTROPHE,
-    TOKEN_QUOTE,
     TOKEN_SEMICOLON,
     TOKEN_COLON,
     TOKEN_COMMA,
@@ -89,7 +87,7 @@ typedef enum enum_TokenType {
     TOKEN_PIPE_EQUAL,
     TOKEN_AMPERSAND_EQUAL,
     TOKEN_CARET_EQUAL,
-    TOKEN_COLON_COLON,
+    TOKEN_2COLON,
 
     // For lambda function expressions and misc.
 
@@ -163,6 +161,7 @@ typedef enum enum_TokenType {
 
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
+    TOKEN_NUMBER,
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_NAN,
@@ -198,9 +197,9 @@ typedef struct struct_Token {
 
     int line;
 
-    // Parsed value if the token is a literal.
+    // Parsed number literal.
 
-    void* value;
+    double value;
 } Token;
 
 typedef struct struct_Scanner {

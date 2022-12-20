@@ -3,6 +3,28 @@
 // Standard C includes.
 
 #include <string.h>
+#include <errno.h>
+#include <math.h>
+#include <stdlib.h>
+
+// Some macros, which shortifies some frequently used functions.
+
+#define MAKE_TOKEN(type) return make_token(scanner, type)
+#define MATCH(expected)  match(scanner, expected)
+#define ADVANCE()        advance(scanner)
+#define PEEK()           peek(scanner)
+#define PEEK2()          peek_next(scanner)
+#define ATEND()          is_at_end(scanner)
+
+// To define the number type of number string to transform to number.
+// 
+// Promit supports 3 types of number literal.
+
+typedef enum enum_NumberType {
+    NUMBER_TYPE_BINARY,
+    NUMBER_TYPE_DECIMAL,
+    NUMBER_TYPE_HEXADECIMAL
+} NumberType;
 
 // void promit_Scanner_init(Scanner*, const char* const);
 // 
@@ -24,7 +46,7 @@ static Token make_token(Scanner* scanner, TokenType type) {
     token.line   = scanner -> line;
     token.start  = scanner -> start;
     token.length = (int) (scanner -> current - scanner -> start);
-    token.value  = NULL;
+    token.value  = 0;
 
     return token;
 }
@@ -39,7 +61,7 @@ static Token error_token(Scanner* scanner, const char* message) {
     token.line   = scanner -> line;
     token.start  = message;
     token.length = (int) strlen(message);
-    token.value  = NULL;
+    token.value  = 0;
 
     return token;
 }
@@ -48,7 +70,7 @@ static bool is_at_end(Scanner* scanner) {
     // If the current reading character is termination character, we are at 
     // the end of the source buffer.
 
-    return scanner -> current == '\0';
+    return *scanner -> current == '\0';
 }
 
 // Returns an unexpected character error.
@@ -75,7 +97,10 @@ static char advance(Scanner* scanner) {
 // advances the character.
 
 static bool match(Scanner* scanner, char expected) {
-    if(is_true(is_at_end(scanner) || *scanner -> current != expected)) 
+    if(is_true(ATEND())) 
+        return false;
+    
+    if(is_true(*scanner -> current != expected)) 
         return false;
     
     scanner -> current++;
@@ -86,10 +111,214 @@ static bool match(Scanner* scanner, char expected) {
 static Token two_char_token(Scanner* scanner, char next, 
     TokenType type_if, TokenType type_else) 
 {
-    if(is_true(match(scanner, next))) 
-        return make_token(scanner, type_if);
+    if(is_true(MATCH(next))) 
+        MAKE_TOKEN(type_if);
     
-    return make_token(scanner, type_else);
+    MAKE_TOKEN(type_else);
+}
+
+// Peeks at the current lexed character without advancing the scanner.
+
+static char peek(Scanner* scanner) {
+    return *scanner -> current;
+}
+
+// Peeks at the next character respecting to current lexed character.
+
+static char peek_next(Scanner* scanner) {
+    if(ATEND()) 
+        return '\0';
+    
+    return scanner -> current[1];
+}
+
+// Skips all the whitespaces, e.g. spaces, tabs etc.
+
+static void skip_whitespace(Scanner* scanner) {
+    char ch;
+
+    while(true) {
+        ch = peek(scanner);
+
+        switch(ch) {
+            case ' ':
+            case '\t': 
+            case '\r': 
+                ADVANCE();
+                break;
+            
+            case '\n': {
+                scanner -> line++;
+
+                ADVANCE();
+                
+                break;
+            }
+
+            // A variant of single line comment in Promit.
+
+            case '#': {
+                while(is_true(!ATEND() && ADVANCE() != '\n')); 
+
+                scanner -> line++;
+                
+                break;
+            }
+
+            case '/': {
+                if(is_true(PEEK2() == '/')) {
+                    while(is_true(!ATEND() && ADVANCE() != '\n'));
+
+                    scanner -> line++;
+
+                    break;
+                }
+                else if(is_true(PEEK2() == '*')) {
+                    while(is_false(ATEND())) {
+                        if(ADVANCE() == '*' && PEEK() == '/') {
+                            ADVANCE();
+
+                            break;
+                        }
+                        else if(is_true(PEEK() == '\n'))
+                            scanner -> line++;
+                    }
+
+                    break;
+                }
+
+                return;
+            }
+
+            default: return;
+        }
+    }
+}
+
+// Reads the whole string upto the closing quote/apostrophe.
+// 
+// Promit supports multiline string.
+
+static Token read_string(Scanner* scanner, char closing) {
+    // Ignore the quote/apostrophe.
+
+    scanner -> start = scanner -> current;
+
+    while(is_true(!ATEND() && PEEK() != closing)) {
+        if(is_true(PEEK() == '\n')) 
+            scanner -> line++;
+        
+        ADVANCE();
+    }
+
+    if(is_true(ATEND())) return error_token(scanner, "Unterminated string!");
+
+    // The closing quote/apostrophe.
+
+    Token token = make_token(scanner, TOKEN_STRING);
+
+    ADVANCE();
+
+    return token;
+}
+
+// Checks whether a character is a digit character.
+
+static bool is_digit(char ch) {
+    return ch >= '0' && ch <= '9';
+}
+
+// Emits a number token.
+
+static Token make_number(Scanner* scanner, NumberType type) {
+    // Reset the error message no.
+
+    errno = 0;
+
+    double num = NAN;
+
+    switch(type) {
+        case NUMBER_TYPE_DECIMAL: 
+            num = strtod(scanner -> start, NULL);
+            break;
+        
+        case NUMBER_TYPE_HEXADECIMAL: 
+            num = (double) strtoll(scanner -> start, NULL, 16);
+            break;
+        
+        case NUMBER_TYPE_BINARY: 
+            num = (double) strtoll(scanner -> start, NULL, 2);
+            break;
+        
+        default: UNREACHABLE();
+    }
+
+    if(errno == ERANGE) 
+        return error_token(scanner, 
+            "Number literal was too large to be converted. "
+            "Make sure it fits within 64-bit integer.");
+
+    Token token = make_token(scanner, TOKEN_NUMBER);
+
+    token.value = num;
+
+    return token;
+}
+
+// Lexes through a decimal number.
+
+static Token read_number(Scanner* scanner) {
+    // Read through all the leading digits.
+
+    while(is_true(is_digit(PEEK()))) 
+        ADVANCE();
+    
+    if(is_true(MATCH('.'))) {
+        // Consume all the digits after that.
+
+        while(is_true(is_digit(PEEK()))) 
+            ADVANCE();
+    }
+
+    if(is_true(MATCH('e') || MATCH('E'))) {
+        if(is_false(MATCH('+'))) MATCH('-');
+
+        if(is_false(is_digit(PEEK()))) 
+            return error_token(scanner, "Unterminated scientific notation!");
+    }
+
+    return make_number(scanner, NUMBER_TYPE_DECIMAL);
+}
+
+// Lexes through a hexadecimal number.
+
+static Token read_hex_number(Scanner* scanner) {
+    char ch = PEEK();
+
+    while(is_true((ch >= '0' && ch <= '9') || 
+        (ch >= 'a' && ch <= 'f') || 
+        (ch >= 'A' && ch <= 'F'))) 
+    {
+        ADVANCE();
+
+        ch = PEEK();
+    }
+
+    return make_number(scanner, NUMBER_TYPE_HEXADECIMAL);
+}
+
+// Lexes through a binary number.
+
+static Token read_bin_number(Scanner* scanner) {
+    char ch = PEEK();
+
+    while(is_true(ch >= '0' && ch <= '1')) {
+        ADVANCE();
+
+        ch = PEEK();
+    }
+
+    return make_number(scanner, NUMBER_TYPE_BINARY);
 }
 
 // void promit_Scanner_next_token(Scanner*);
@@ -97,66 +326,149 @@ static Token two_char_token(Scanner* scanner, char next,
 // Scan and emit the next token whenever the compiler needs it.
 
 Token promit_Scanner_next_token(Scanner* scanner) {
-#define MAKE_TOKEN(type) return make_token(scanner, type); break;
-#define MAKE_BI_TOKEN(next, type_if, type_else)                      \
-    return two_char_token(scanner, next, type_if, type_else); break;
+#define MAKE_BI_TOKEN(next, type_if, type_else)                  \
+    return two_char_token(scanner, next, type_if, type_else)
 
     // We are gonna discard whitespaces between tokens.
 
-    skip_whitespaces();
+    skip_whitespace(scanner);
 
     scanner -> start = scanner -> current;
 
     // If we are at the end of source buffer, return TOKEN_EOF.
 
-    if(is_true(is_at_end(scanner))) 
-        return make_token(scanner, TOKEN_EOF);
+    if(is_true(ATEND())) 
+        MAKE_TOKEN(TOKEN_EOF);
     
     // Get the current character.
 
-    char c = advance(scanner);
+    char c = ADVANCE();
+
+    // Literal.
+
+    // Read a Hexadecimal number if it starts with '0x'.
+
+    if(is_true(c == '0' && PEEK() == 'x')) {
+        ADVANCE();    // Consume 'x'.
+
+        return read_hex_number(scanner);
+    }
+    
+    // Read a binary number if it starts with '0b'.
+
+    else if(is_true(c == '0' && PEEK() == 'b')) {
+        ADVANCE();    // Consume 'b'.
+
+        return read_bin_number(scanner);
+    }
+
+    // Else try reading it like a decimal number.
+
+    else if(is_true(is_digit(c))) return read_number(scanner);
+
 
     switch(c) {
-        // Braces.
-
         case '(': MAKE_TOKEN(TOKEN_LEFT_PAREN);
         case ')': MAKE_TOKEN(TOKEN_RIGHT_PAREN);
         case '{': MAKE_TOKEN(TOKEN_LEFT_BRACE);
         case '}': MAKE_TOKEN(TOKEN_RIGHT_BRACE);
         case '[': MAKE_TOKEN(TOKEN_LEFT_BRACKET);
         case ']': MAKE_TOKEN(TOKEN_RIGHT_BRACKET);
-        case '<': MAKE_BI_TOKEN('=', TOKEN_LEFT_ANGLE_EQUAL, TOKEN_LEFT_ANGLE);
-        case '>': 
-            MAKE_BI_TOKEN('=', TOKEN_RIGHT_ANGLE_EQUAL, TOKEN_RIGHT_ANGLE);
 
-        // Operators.
+        case '<': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_LEFT_ANGLE_EQUAL);
+            else if(is_true(MATCH('<'))) 
+                MAKE_TOKEN(TOKEN_LEFT_2ANGLE);
+            
+            MAKE_TOKEN(TOKEN_LEFT_ANGLE);
+        }
 
-        case '+': MAKE_TOKEN(TOKEN_PLUS);
-        case '-': MAKE_TOKEN(TOKEN_MINUS);
-        case '!': MAKE_TOKEN(TOKEN_BANG);
-        case '/': MAKE_TOKEN(TOKEN_SLASH);
-        case '*': MAKE_TOKEN(TOKEN_ASTERISK);
-        case '%': MAKE_TOKEN(TOKEN_PERCENT);
-        case '&': MAKE_TOKEN(TOKEN_AMPERSAND);
+        case '>': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_RIGHT_ANGLE_EQUAL);
+            else if(is_true(MATCH('>'))) 
+                MAKE_TOKEN(TOKEN_RIGHT_2ANGLE);
+            
+            MAKE_TOKEN(TOKEN_RIGHT_ANGLE);
+        }
+
+        case '+': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_PLUS_EQUAL);
+            else if(is_true(MATCH('+'))) 
+                MAKE_TOKEN(TOKEN_2PLUS);
+            
+            MAKE_TOKEN(TOKEN_PLUS);
+        }
+
+        case '-': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_MINUS_EQUAL);
+            else if(is_true(MATCH('-'))) 
+                MAKE_TOKEN(TOKEN_2MINUS);
+            else if(is_true(MATCH('>'))) 
+                MAKE_TOKEN(TOKEN_ARROW);
+            
+            MAKE_TOKEN(TOKEN_MINUS);
+        }
+
+        case '!': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_BANG_EQUAL);
+            else if(is_true(MATCH('&'))) 
+                MAKE_BI_TOKEN('=', TOKEN_BANG_AMPERSAND_EQUAL, 
+                TOKEN_BANG_AMPERSAND);
+            else if(is_true(MATCH('|'))) 
+                MAKE_BI_TOKEN('=', TOKEN_BANG_PIPE_EQUAL, TOKEN_BANG_PIPE);
+            
+            MAKE_TOKEN(TOKEN_BANG);
+        }
+
+        case '/': MAKE_BI_TOKEN('=', TOKEN_SLASH_EQUAL, TOKEN_SLASH);
+        case '*': MAKE_BI_TOKEN('=', TOKEN_ASTERISK_EQUAL, TOKEN_ASTERISK);
+        case '%': MAKE_BI_TOKEN('=', TOKEN_PERCENT_EQUAL, TOKEN_PERCENT);
+
+        case '&': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_AMPERSAND_EQUAL);
+            else if(is_true(MATCH('&'))) 
+                MAKE_TOKEN(TOKEN_2AMPERSAND);
+            
+            MAKE_TOKEN(TOKEN_AMPERSAND);
+        }
+
         case '~': MAKE_TOKEN(TOKEN_TILDE);
-        case '^': MAKE_TOKEN(TOKEN_CARET);
-        case '|': MAKE_BI_TOKEN('|', TOKEN_2PIPE, TOKEN_PIPE);
+        case '^': MAKE_BI_TOKEN('=', TOKEN_CARET_EQUAL, TOKEN_CARET);
+
+        case '|': {
+            if(is_true(MATCH('='))) 
+                MAKE_TOKEN(TOKEN_PIPE_EQUAL);
+            else if(is_true(MATCH('|'))) 
+                MAKE_TOKEN(TOKEN_2PIPE);
+            
+            MAKE_TOKEN(TOKEN_PIPE);
+        }
+
         case '\\': MAKE_TOKEN(TOKEN_BACKSLASH);
-
-        // Miscellaneous.
-
         case '.': MAKE_TOKEN(TOKEN_PERIOD);
         case '=': MAKE_BI_TOKEN('=', TOKEN_2EQUAL, TOKEN_EQUAL);
         case '?': MAKE_TOKEN(TOKEN_QUESTION);
-        case '\'': MAKE_TOKEN(TOKEN_APOSTROPHE);
-        case '"': MAKE_TOKEN(TOKEN_QUOTE);
         case ';': MAKE_TOKEN(TOKEN_SEMICOLON);
-        case ':': MAKE_TOKEN(TOKEN_COLON);
+        case ':': MAKE_BI_TOKEN(':', TOKEN_2COLON, TOKEN_COLON);
         case ',': MAKE_TOKEN(TOKEN_COMMA);
+        case '\'': return read_string(scanner, '\'');
+        case '"':  return read_string(scanner, '"');
     }
     
     return unexpected_character(scanner);
 
-#undef MAKE_TOKEN
 #undef MAKE_BI_TOKEN
 }
+
+#undef MAKE_TOKEN
+#undef MATCH
+#undef ADVANCE
+#undef PEEK
+#undef PEEK2
+#undef ATEND

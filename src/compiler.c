@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-ObjFn* promit_Compiler_compile(PromitVM* vm, const char* source, 
+ObjFn* promit_Compiler_compile(SalamanderVM* vm, const char* source, 
     bool print_errors) 
 {
     Scanner scanner;
@@ -18,12 +18,12 @@ ObjFn* promit_Compiler_compile(PromitVM* vm, const char* source,
         token = promit_Scanner_next_token(&scanner);
 
         if(token.line != line) {
-            printf("%4d ", line);
+            printf("%4d ", token.line);
 
             line = token.line;
         } else printf("   | ");
 
-        printf("%2d %.*s", token.type, token.length, token.start);
+        printf("%2d '%.*s'\n", token.type, token.length, token.start);
 
         if(token.type == TOKEN_EOF) 
             break;
