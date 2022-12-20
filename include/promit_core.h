@@ -7,13 +7,13 @@
 
 #if defined __GNUC__ || defined __clang__
 
-#define is_true(x) __builtin_expect(!!(x), 1)
-#define is_false(x) __builtin_expect(!!(x), 0)
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 #else
 
-#define is_true(x) x
-#define is_false(x) !x
+#define likely(x) x
+#define unlikely(x) x
 
 #endif    // __GNUC__ and __clang__
 

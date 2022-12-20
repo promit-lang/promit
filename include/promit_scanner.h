@@ -132,13 +132,18 @@ typedef enum enum_TokenType {
     TOKEN_RETURN,
     TOKEN_YIELD,
 
+    // if .. else
+
+    TOKEN_IF,
+    TOKEN_ELSE,
+
     // 'match' -> equivalent to 'switch' in C like languages.
 
     TOKEN_MATCH,
     TOKEN_NEXT,
     TOKEN_CASE,
     TOKEN_PREVIOUS,
-    TOKEN_EXCEPTION,
+    TOKEN_EXCEPT,
     
     // Common in loops and match.
     
@@ -167,6 +172,10 @@ typedef enum enum_TokenType {
     TOKEN_NAN,
     TOKEN_INFINITY,
     TOKEN_NULL,
+
+    // Miscellaneous.
+
+    TOKEN_DEL,
 
     /** For string interpolation. */
 

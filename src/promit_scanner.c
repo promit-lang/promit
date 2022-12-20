@@ -97,10 +97,10 @@ static char advance(Scanner* scanner) {
 // advances the character.
 
 static bool match(Scanner* scanner, char expected) {
-    if(is_true(ATEND())) 
+    if(unlikely(ATEND())) 
         return false;
     
-    if(is_true(*scanner -> current != expected)) 
+    if(*scanner -> current != expected) 
         return false;
     
     scanner -> current++;
@@ -111,7 +111,7 @@ static bool match(Scanner* scanner, char expected) {
 static Token two_char_token(Scanner* scanner, char next, 
     TokenType type_if, TokenType type_else) 
 {
-    if(is_true(MATCH(next))) 
+    if(MATCH(next)) 
         MAKE_TOKEN(type_if);
     
     MAKE_TOKEN(type_else);
@@ -138,7 +138,7 @@ static void skip_whitespace(Scanner* scanner) {
     char ch;
 
     while(true) {
-        ch = peek(scanner);
+        ch = PEEK();
 
         switch(ch) {
             case ' ':
@@ -158,7 +158,7 @@ static void skip_whitespace(Scanner* scanner) {
             // A variant of single line comment in Promit.
 
             case '#': {
-                while(is_true(!ATEND() && ADVANCE() != '\n')); 
+                while(!ATEND() && ADVANCE() != '\n') /** No statement. */;
 
                 scanner -> line++;
                 
@@ -166,21 +166,27 @@ static void skip_whitespace(Scanner* scanner) {
             }
 
             case '/': {
-                if(is_true(PEEK2() == '/')) {
-                    while(is_true(!ATEND() && ADVANCE() != '\n'));
+                // For single line comments.
+
+                if(PEEK2() == '/') {
+                    while(!ATEND() && ADVANCE() != '\n') /** No statement. */ ;
 
                     scanner -> line++;
 
                     break;
                 }
-                else if(is_true(PEEK2() == '*')) {
-                    while(is_false(ATEND())) {
+
+                // For multiline/block comments.
+
+                else if(PEEK2() == '*') {
+                    while(ATEND()) {
                         if(ADVANCE() == '*' && PEEK() == '/') {
                             ADVANCE();
 
                             break;
                         }
-                        else if(is_true(PEEK() == '\n'))
+                        
+                        else if(likely(PEEK() == '\n'))
                             scanner -> line++;
                     }
 
@@ -204,18 +210,18 @@ static Token read_string(Scanner* scanner, char closing) {
 
     scanner -> start = scanner -> current;
 
-    while(is_true(!ATEND() && PEEK() != closing)) {
-        if(is_true(PEEK() == '\n')) 
+    while(!ATEND() && PEEK() != closing) {
+        if(unlikely(PEEK() == '\n')) 
             scanner -> line++;
         
         ADVANCE();
     }
 
-    if(is_true(ATEND())) return error_token(scanner, "Unterminated string!");
-
-    // The closing quote/apostrophe.
+    if(unlikely(ATEND())) return error_token(scanner, "Unterminated string!");
 
     Token token = make_token(scanner, TOKEN_STRING);
+
+    // The closing quote/apostrophe.
 
     ADVANCE();
 
@@ -270,21 +276,26 @@ static Token make_number(Scanner* scanner, NumberType type) {
 static Token read_number(Scanner* scanner) {
     // Read through all the leading digits.
 
-    while(is_true(is_digit(PEEK()))) 
+    while(is_digit(PEEK())) 
         ADVANCE();
     
-    if(is_true(MATCH('.'))) {
+    if(likely(MATCH('.'))) {
         // Consume all the digits after that.
 
-        while(is_true(is_digit(PEEK()))) 
+        while(is_digit(PEEK())) 
             ADVANCE();
     }
 
-    if(is_true(MATCH('e') || MATCH('E'))) {
-        if(is_false(MATCH('+'))) MATCH('-');
+    if(MATCH('e') || MATCH('E')) {
+        if(MATCH('+')) MATCH('-');
 
-        if(is_false(is_digit(PEEK()))) 
+        if(unlikely(!is_digit(PEEK())))  
             return error_token(scanner, "Unterminated scientific notation!");
+        
+        // Consume the exponential digits.
+
+        while(is_digit(PEEK())) 
+            ADVANCE();
     }
 
     return make_number(scanner, NUMBER_TYPE_DECIMAL);
@@ -295,9 +306,9 @@ static Token read_number(Scanner* scanner) {
 static Token read_hex_number(Scanner* scanner) {
     char ch = PEEK();
 
-    while(is_true((ch >= '0' && ch <= '9') || 
+    while((ch >= '0' && ch <= '9') || 
         (ch >= 'a' && ch <= 'f') || 
-        (ch >= 'A' && ch <= 'F'))) 
+        (ch >= 'A' && ch <= 'F')) 
     {
         ADVANCE();
 
@@ -312,13 +323,221 @@ static Token read_hex_number(Scanner* scanner) {
 static Token read_bin_number(Scanner* scanner) {
     char ch = PEEK();
 
-    while(is_true(ch >= '0' && ch <= '1')) {
+    while(ch >= '0' && ch <= '1') {
         ADVANCE();
 
         ch = PEEK();
     }
 
     return make_number(scanner, NUMBER_TYPE_BINARY);
+}
+
+// Check whether provided character is an alphabetical character.
+
+static bool is_alpha(char ch) {
+    // 'thi$' is a valid variable name.
+
+    return (ch >= 'a' && ch <= 'z') || 
+           (ch >= 'A' && ch <= 'Z') || 
+           (ch == '$' || ch == '_');
+}
+
+// Matches rest of the characters with currently lexed token striding from 
+// character and returns the provided token type if the character maches.
+
+static TokenType check_keyword(Scanner* scanner, int start, 
+    int length, const char* rest, TokenType type) 
+{
+    // Match the length first.
+
+    if((scanner -> current - scanner -> start == start + length) && 
+           memcmp(scanner -> start + start, rest, length * sizeof(char)) == 0) 
+    {
+        return type;
+    }
+
+    return TOKEN_IDENTIFIER;
+}
+
+static TokenType identifier_type(Scanner* scanner) {
+#define CHECK(start, length, rest, type)                       \
+    return check_keyword(scanner, start, length, rest, type)
+
+    switch(scanner -> start[0]) {
+        case 'c': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'a': 
+                        if(scanner -> current - scanner -> start > 2) {
+                            switch(scanner -> start[2]) {
+                                case 's': CHECK(3, 1, "e", TOKEN_CASE);
+                                case 't': CHECK(3, 4, "alog", TOKEN_CATALOG);
+                            }
+                        }
+
+                        break;
+
+                    case 'l': CHECK(2, 3, "ass", TOKEN_CLASS);
+                    case 'o': CHECK(2, 6, "ntinue", TOKEN_CONTINUE);
+                }
+            }
+
+            break;
+        
+        case 'd': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'e': CHECK(2, 1, "l", TOKEN_DEL);
+                    case 'o': return TOKEN_DO;
+                }
+            }
+
+            break;
+        
+        case 'e': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'l': CHECK(2, 2, "se", TOKEN_ELSE);
+                    case 'n': CHECK(2, 2, "um", TOKEN_ENUM);
+                    case 'x': CHECK(2, 4, "cept", TOKEN_EXCEPT);
+                }
+            }
+
+            break;
+        
+        case 'f': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'a': CHECK(2, 3, "lse", TOKEN_FALSE);
+                    case 'i': 
+                        if(likely(scanner -> current - scanner -> start > 2)) {
+                            switch(scanner -> start[2]) {
+                                case 'b': CHECK(3, 2, "er", TOKEN_FIBER);
+                                case 'n': CHECK(3, 2, "al", TOKEN_FINAL);
+                            }
+                        }
+
+                        break;
+                    
+                    case 'n': return TOKEN_FN;
+                    case 'o': CHECK(2, 1, "r", TOKEN_FOR);
+                }
+            }
+
+            break;
+        
+        case 'g': CHECK(1, 5, "etter", TOKEN_GETTER);
+        case 'i': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'f': return TOKEN_IF;
+                    case 'n': 
+                        if(likely(scanner -> current - scanner -> start > 2)) {
+                            switch(scanner -> start[2]) {
+                                case 'f': CHECK(3, 5, "inity", TOKEN_INFINITY);
+                                case 's': CHECK(3, 3, "tof", TOKEN_INSTOF);
+                            }
+                        }
+
+                        break;
+                }
+            }
+
+            break;
+
+        case 'm': CHECK(1, 4, "atch", TOKEN_MATCH);
+        case 'n': 
+            if(unlikely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'a': CHECK(2, 1, "n", TOKEN_NAN);
+                    case 'e': CHECK(2, 2, "xt", TOKEN_NEXT);
+                    case 'u': CHECK(2, 2, "ll", TOKEN_NULL);
+                }
+            }
+
+            break;
+        
+        case 'p': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'a': CHECK(2, 4, "rent", TOKEN_PARENT);
+                    case 'r': 
+                        if(scanner -> current - scanner -> start > 2) {
+                            switch(scanner -> start[2]) {
+                                case 'e': CHECK(3, 5, "vious", TOKEN_PREVIOUS);
+                                case 'i': CHECK(3, 4, "vate", TOKEN_PRIVATE);
+                                case 'o': CHECK(3, 6, "tected", TOKEN_PROTECTED);
+                            }
+                        }
+
+                        break;
+                    
+                    case 'u': CHECK(2, 4, "blic", TOKEN_PUBLIC);
+                }
+            }
+
+            break;
+        
+        case 'r': CHECK(1, 5, "eturn", TOKEN_RETURN);
+        case 's': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'e': 
+                        if(scanner -> current - scanner -> start > 2) {
+                            switch(scanner -> start[2]) {
+                                case 'l': CHECK(3, 1, "f", TOKEN_SELF);
+                                case 't': CHECK(3, 3, "ter", TOKEN_SETTER);
+                            }
+                        }
+
+                        break;
+                    
+                    case 't': CHECK(2, 4, "atic", TOKEN_STATIC);
+                }
+            }
+
+            break;
+        
+        case 't': 
+            if(likely(scanner -> current - scanner -> start > 1)) {
+                switch(scanner -> start[1]) {
+                    case 'a': CHECK(2, 2, "ke", TOKEN_TAKE);
+                    case 'r': CHECK(2, 2, "ue", TOKEN_TRUE);
+                }
+            }
+
+            break;
+        
+        case 'w': CHECK(1, 4, "hile", TOKEN_WHILE);
+        case 'y': CHECK(1, 4, "ield", TOKEN_YIELD);
+    }
+
+    return TOKEN_IDENTIFIER;
+
+#undef CHECK
+}
+
+// Lexes through the whole identifier.
+
+static Token read_identifier(Scanner* scanner) {
+    // There can be also numbers in identifiers.
+    // 
+    //     th123 -> Valid identifier.
+    //     123th -> Not valid identifier.
+    // 
+    // We are sure the identifier we are lexing is valid. Cause the first alpha
+    // character has already been consumed by 'promit_Scanner_next_token'.
+
+    while(is_alpha(PEEK()) || is_digit(PEEK())) 
+        ADVANCE();
+    
+    // Now we have consumes all the alpha character there is, we will figure 
+    // out what type of identifier it is. For example, 
+    // 
+    //     false -> Literal type identifier.
+    //     some_box -> Variable type identifier.
+
+    MAKE_TOKEN(identifier_type(scanner));
 }
 
 // void promit_Scanner_next_token(Scanner*);
@@ -337,7 +556,7 @@ Token promit_Scanner_next_token(Scanner* scanner) {
 
     // If we are at the end of source buffer, return TOKEN_EOF.
 
-    if(is_true(ATEND())) 
+    if(unlikely(ATEND())) 
         MAKE_TOKEN(TOKEN_EOF);
     
     // Get the current character.
@@ -348,7 +567,7 @@ Token promit_Scanner_next_token(Scanner* scanner) {
 
     // Read a Hexadecimal number if it starts with '0x'.
 
-    if(is_true(c == '0' && PEEK() == 'x')) {
+    if(c == '0' && PEEK() == 'x') {
         ADVANCE();    // Consume 'x'.
 
         return read_hex_number(scanner);
@@ -356,7 +575,7 @@ Token promit_Scanner_next_token(Scanner* scanner) {
     
     // Read a binary number if it starts with '0b'.
 
-    else if(is_true(c == '0' && PEEK() == 'b')) {
+    if(c == '0' && PEEK() == 'b') {
         ADVANCE();    // Consume 'b'.
 
         return read_bin_number(scanner);
@@ -364,7 +583,11 @@ Token promit_Scanner_next_token(Scanner* scanner) {
 
     // Else try reading it like a decimal number.
 
-    else if(is_true(is_digit(c))) return read_number(scanner);
+    if(likely(is_digit(c))) return read_number(scanner);
+
+    // Read it as an identifier, if it starts with an alphabetical character.
+
+    if(is_alpha(c)) return read_identifier(scanner);
 
 
     switch(c) {
@@ -376,50 +599,50 @@ Token promit_Scanner_next_token(Scanner* scanner) {
         case ']': MAKE_TOKEN(TOKEN_RIGHT_BRACKET);
 
         case '<': {
-            if(is_true(MATCH('='))) 
+            if(likely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_LEFT_ANGLE_EQUAL);
-            else if(is_true(MATCH('<'))) 
+            else if(unlikely(MATCH('<'))) 
                 MAKE_TOKEN(TOKEN_LEFT_2ANGLE);
             
             MAKE_TOKEN(TOKEN_LEFT_ANGLE);
         }
 
         case '>': {
-            if(is_true(MATCH('='))) 
+            if(likely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_RIGHT_ANGLE_EQUAL);
-            else if(is_true(MATCH('>'))) 
+            else if(unlikely(MATCH('>'))) 
                 MAKE_TOKEN(TOKEN_RIGHT_2ANGLE);
             
             MAKE_TOKEN(TOKEN_RIGHT_ANGLE);
         }
 
         case '+': {
-            if(is_true(MATCH('='))) 
+            if(unlikely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_PLUS_EQUAL);
-            else if(is_true(MATCH('+'))) 
+            else if(likely(MATCH('+'))) 
                 MAKE_TOKEN(TOKEN_2PLUS);
             
             MAKE_TOKEN(TOKEN_PLUS);
         }
 
         case '-': {
-            if(is_true(MATCH('='))) 
+            if(unlikely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_MINUS_EQUAL);
-            else if(is_true(MATCH('-'))) 
+            else if(likely(MATCH('-'))) 
                 MAKE_TOKEN(TOKEN_2MINUS);
-            else if(is_true(MATCH('>'))) 
+            else if(unlikely(MATCH('>'))) 
                 MAKE_TOKEN(TOKEN_ARROW);
             
             MAKE_TOKEN(TOKEN_MINUS);
         }
 
         case '!': {
-            if(is_true(MATCH('='))) 
+            if(likely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_BANG_EQUAL);
-            else if(is_true(MATCH('&'))) 
+            else if(unlikely(MATCH('&'))) 
                 MAKE_BI_TOKEN('=', TOKEN_BANG_AMPERSAND_EQUAL, 
                 TOKEN_BANG_AMPERSAND);
-            else if(is_true(MATCH('|'))) 
+            else if(unlikely(MATCH('|'))) 
                 MAKE_BI_TOKEN('=', TOKEN_BANG_PIPE_EQUAL, TOKEN_BANG_PIPE);
             
             MAKE_TOKEN(TOKEN_BANG);
@@ -430,9 +653,9 @@ Token promit_Scanner_next_token(Scanner* scanner) {
         case '%': MAKE_BI_TOKEN('=', TOKEN_PERCENT_EQUAL, TOKEN_PERCENT);
 
         case '&': {
-            if(is_true(MATCH('='))) 
+            if(unlikely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_AMPERSAND_EQUAL);
-            else if(is_true(MATCH('&'))) 
+            else if(likely(MATCH('&'))) 
                 MAKE_TOKEN(TOKEN_2AMPERSAND);
             
             MAKE_TOKEN(TOKEN_AMPERSAND);
@@ -442,9 +665,9 @@ Token promit_Scanner_next_token(Scanner* scanner) {
         case '^': MAKE_BI_TOKEN('=', TOKEN_CARET_EQUAL, TOKEN_CARET);
 
         case '|': {
-            if(is_true(MATCH('='))) 
+            if(unlikely(MATCH('='))) 
                 MAKE_TOKEN(TOKEN_PIPE_EQUAL);
-            else if(is_true(MATCH('|'))) 
+            else if(likely(MATCH('|'))) 
                 MAKE_TOKEN(TOKEN_2PIPE);
             
             MAKE_TOKEN(TOKEN_PIPE);
