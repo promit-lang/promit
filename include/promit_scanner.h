@@ -111,6 +111,7 @@ typedef enum enum_TokenType {
     // Class and OOP.
 
     TOKEN_CLASS,
+    TOKEN_BASE,
     TOKEN_GETTER,
     TOKEN_SETTER,
     TOKEN_PUBLIC,

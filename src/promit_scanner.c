@@ -364,6 +364,7 @@ static TokenType identifier_type(Scanner* scanner) {
     return check_keyword(scanner, start, length, rest, type)
 
     switch(scanner -> start[0]) {
+        case 'b': CHECK(1, 3, "ase", TOKEN_BASE);
         case 'c': 
             if(likely(scanner -> current - scanner -> start > 1)) {
                 switch(scanner -> start[1]) {
