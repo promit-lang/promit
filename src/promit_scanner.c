@@ -4,7 +4,6 @@
 
 #include <string.h>
 #include <errno.h>
-#include <math.h>
 #include <stdlib.h>
 
 // Some macros, which shortifies some frequently used functions.
@@ -237,11 +236,11 @@ static bool is_digit(char ch) {
 // Emits a number token.
 
 static Token make_number(Scanner* scanner, NumberType type) {
-    // Reset the error message no.
+    // Reset the error message number <errno.h>.
 
     errno = 0;
 
-    double num = NAN;
+    double num = -1;
 
     switch(type) {
         case NUMBER_TYPE_DECIMAL: 
