@@ -225,6 +225,14 @@ typedef struct struct_Scanner {
 
     const char* current;
 
+    // The pointer sequence of every single line.
+
+    const char** lines;
+
+    // Total number of lines in the source.
+
+    int lines_len;
+
     // 1-based line number where current scanning is going on.
 
     int line;
@@ -237,5 +245,9 @@ void promit_Scanner_init(Scanner*, const char* const);
 // Scan and emit the next token whenever the compiler needs it.
 
 Token promit_Scanner_next_token(Scanner*);
+
+// Frees the scanner.
+
+void promit_Scanner_free(Scanner*);
 
 #endif    // __PROMIT_SCANNER_H__

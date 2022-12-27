@@ -25,17 +25,6 @@ typedef enum enum_NumberType {
     NUMBER_TYPE_HEXADECIMAL
 } NumberType;
 
-// void promit_Scanner_init(Scanner*, const char* const);
-// 
-// Initialize the scanner.
-
-void promit_Scanner_init(Scanner* scanner, const char* source) {
-    scanner -> source  = source;
-    scanner -> start   = source;
-    scanner -> current = source;
-    scanner -> line    = 1;
-}
-
 // Creates a token of provided token type.
 
 static Token make_token(Scanner* scanner, TokenType type) {
@@ -178,13 +167,12 @@ static void skip_whitespace(Scanner* scanner) {
                 // For multiline/block comments.
 
                 else if(PEEK2() == '*') {
-                    while(ATEND()) {
+                    while(!ATEND()) {
                         if(ADVANCE() == '*' && PEEK() == '/') {
                             ADVANCE();
 
                             break;
                         }
-                        
                         else if(likely(PEEK() == '\n'))
                             scanner -> line++;
                     }
@@ -538,6 +526,19 @@ static Token read_identifier(Scanner* scanner) {
     //     some_box -> Variable type identifier.
 
     MAKE_TOKEN(identifier_type(scanner));
+}
+
+// void promit_Scanner_init(Scanner*, const char* const);
+// 
+// Initialize the scanner.
+
+void promit_Scanner_init(Scanner* scanner, const char* source) {
+    scanner -> source  = source;
+    scanner -> start   = source;
+    scanner -> current = source;
+    scanner -> line    = 1;
+
+    linefy(scanner);
 }
 
 // void promit_Scanner_next_token(Scanner*);

@@ -27,9 +27,25 @@
 
 // The SalamanderVM runtime and it's compiler backend.
 
-#include <salamander/salamander.h>
 #include <salamander/compiler.h>
 
-ObjFn* promit_Compiler_compile(SalamanderVM*, const char*, bool);
+// A struct to fill in the error data.
+
+typedef struct struct_ErrorData {
+    const char* module;
+    const char* message;
+    const char* line;
+    int line_len;
+    int line_num;
+    int column;    // Column number.
+    int length;    // Token length.
+} ErrorData;
+
+// Function to call if any compilation error occurs. This function will decide 
+// what to do with the error data.
+
+typedef void (*PromitErrorFn)(ErrorData);
+
+CompilerKit* promit_Compiler_compile(SalamanderVM*, const char*, bool, PromitErrorFn);
 
 #endif    // __PROMIT_H__
