@@ -12,7 +12,7 @@ static void* default_reallocator(void* memory, size_t size) {
     // If [size] is 0, then this function is called to free the [memory] 
     // pointer.
 
-    IF(size == 0u) {
+    if(size == 0u) {
         free(memory);
 
         return NULL;
