@@ -31,7 +31,8 @@ static Token make_token(Scanner* scanner, TokenType type) {
     Token token;
 
     token.type   = type;
-    token.line   = scanner -> line;
+    token.line   = scanner -> line_num;
+    token.column = (int) (scanner -> line - scanner -> current);
     token.start  = scanner -> start;
     token.length = (int) (scanner -> current - scanner -> start);
     token.value  = 0;
@@ -43,13 +44,10 @@ static Token make_token(Scanner* scanner, TokenType type) {
 // message.
 
 static Token error_token(Scanner* scanner, const char* message) {
-    Token token;
+    Token token = make_token(scanner, TOKEN_ERROR);
 
-    token.type   = TOKEN_ERROR;
-    token.line   = scanner -> line;
     token.start  = message;
     token.length = (int) strlen(message);
-    token.value  = 0;
 
     return token;
 }
@@ -136,7 +134,12 @@ static void skip_whitespace(Scanner* scanner) {
                 break;
             
             case '\n': {
-                scanner -> line++;
+                scanner -> line_num++;
+
+                // Current character is '\n'. So, from the next character the 
+                // new line begins.
+
+                scanner -> line = scanner -> current + 1u;
 
                 ADVANCE();
                 
@@ -148,7 +151,11 @@ static void skip_whitespace(Scanner* scanner) {
             case '#': {
                 while(!ATEND() && ADVANCE() != '\n') /** No statement. */;
 
-                scanner -> line++;
+                scanner -> line_num++;
+
+                // '\n' is already been lexed.
+
+                scanner -> line = scanner -> current;
                 
                 break;
             }
@@ -159,7 +166,11 @@ static void skip_whitespace(Scanner* scanner) {
                 if(PEEK2() == '/') {
                     while(!ATEND() && ADVANCE() != '\n') /** No statement. */ ;
 
-                    scanner -> line++;
+                    scanner -> line_num++;
+
+                    // '\n' is already have been lexed.
+
+                    scanner -> line = scanner -> current;
 
                     break;
                 }
@@ -173,8 +184,11 @@ static void skip_whitespace(Scanner* scanner) {
 
                             break;
                         }
-                        else if(likely(PEEK() == '\n'))
-                            scanner -> line++;
+                        else if(likely(PEEK() == '\n')) {
+                            scanner -> line_num++;
+
+                            scanner -> line = scanner -> current + 1u;
+                        }
                     }
 
                     break;
@@ -322,7 +336,7 @@ static Token read_bin_number(Scanner* scanner) {
 // Check whether provided character is an alphabetical character.
 
 static bool is_alpha(char ch) {
-    // 'thi$' is a valid variable name.
+    // '_thi$' is a valid variable name.
 
     return (ch >= 'a' && ch <= 'z') || 
            (ch >= 'A' && ch <= 'Z') || 
@@ -522,7 +536,7 @@ static Token read_identifier(Scanner* scanner) {
     // Now we have consumes all the alpha character there is, we will figure 
     // out what type of identifier it is. For example, 
     // 
-    //     false -> Literal type identifier.
+    //     false    -> Literal type identifier.
     //     some_box -> Variable type identifier.
 
     MAKE_TOKEN(identifier_type(scanner));
@@ -533,10 +547,10 @@ static Token read_identifier(Scanner* scanner) {
 // Initialize the scanner.
 
 void promit_Scanner_init(Scanner* scanner, const char* source) {
-    scanner -> source  = source;
-    scanner -> start   = source;
-    scanner -> current = source;
-    scanner -> line    = 1;
+    scanner -> start    = source;
+    scanner -> current  = source;
+    scanner -> line     = source;
+    scanner -> line_num = 1;
 
     linefy(scanner);
 }

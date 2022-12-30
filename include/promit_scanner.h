@@ -207,16 +207,18 @@ typedef struct struct_Token {
 
     int line;
 
+    // The column number/character offset from the line the token is from.
+    // 
+    // Note: [column] is 0-based index number.
+
+    int column;
+
     // Parsed number literal.
 
     double value;
 } Token;
 
 typedef struct struct_Scanner {
-    // The main source code which is being lexed.
-
-    const char* source;
-
     // Beginning of the currently lexed token in [source].
 
     const char* start;
@@ -225,17 +227,13 @@ typedef struct struct_Scanner {
 
     const char* current;
 
-    // The pointer sequence of every single line.
+    // Current line the scanner is on.
 
-    const char** lines;
-
-    // Total number of lines in the source.
-
-    int lines_len;
+    const char* line;
 
     // 1-based line number where current scanning is going on.
 
-    int line;
+    int line_num;
 } Scanner;
 
 // Initialize the scanner.
